@@ -1,0 +1,139 @@
+// CppTest.cpp : Defines the entry point for the console application.
+//
+
+#include "stdafx.h"
+#include <iostream>
+#include <fstream>
+#include <string>
+#include "MarketSimulator.cpp"
+using namespace std;
+
+int _tmain(int argc, _TCHAR* argv[])
+{
+	string baseDirectory;
+	ifstream inFile;	
+	inFile.open("config.ini");
+	if (!inFile)
+	{
+		printf("config.ini doesn't exist");
+		return 0;
+	}
+	else
+	{
+		getline(inFile, baseDirectory);
+		inFile.close();
+		Exchange exchange("AAV", "AAV28C1711A", baseDirectory);
+	}	
+
+	return 0;
+}
+
+struct PricePoint
+{
+	double Price;
+	bool FlipUp = false;
+	bool FlipDown = false;
+};
+
+#include <map>
+class AlgoTrading
+{
+public:
+	AlgoTrading(string warrantCode, string baseDirectory)
+	{
+		initialiseMatrix(baseDirectory + "\\Matrix\\" + warrantCode);
+	};
+private:
+	string wCode;		 
+	std::map<string, PricePoint> matrix;
+	string RemoveZero(string ss)
+	{
+		if (ss.find(".") != string::npos)
+		{
+			int i = ss.length - 1;
+			while (i >= 0)
+			{
+				if (ss.at(i) == '.') return ss.substr(0, ss.length - 1);
+				if (ss.at(i) == '0') ss = ss.substr(0, ss.length - 1);
+				else return ss;
+				i--;
+			}
+		}
+		return ss;
+	}
+	double strToDouble(string s)
+	{
+		int i = s.find(".");
+		double result = 0;
+		int factor = 1;
+		if (i == string::npos)
+		{
+			i = s.length;
+			while (i >= 0)
+			{
+				result += s[i] * factor;
+				factor *= 10;
+				i--;
+			}			
+		}
+		else
+		{
+			int j = i - 1;
+			while (j >= 0)
+			{
+				result += s[j] * factor;
+				factor *= 10;
+				j--;
+			}
+			int j = i + 1;
+			factor = 0.1;
+			while (j < s.length)
+			{
+				result += s[j] * factor;
+				factor *= 0.1;
+				j++;
+			}
+		}
+		return result;
+	}
+	int compareDouble(double x, double y)
+	{
+		if (x - y > 0.0001) return 1;
+		if (x - y < -0.0001) return -1;
+		return 0;
+	}
+	bool initialiseMatrix(string fileName)
+	{
+		ifstream inFile;
+		string preKey = "";
+		inFile.open(fileName);
+		if (!inFile)
+		{
+			printf("Matrix file s% doesn't exist", fileName);
+			return false;
+		}
+		string line = "";
+		while (getline(inFile, line))
+		{
+			if (line != "")
+			{
+				string key = RemoveZero(line);
+				getline(inFile, line);
+				double value = strToDouble(line);
+				PricePoint pp;
+				pp.Price = value;
+				if (preKey != "")
+				{
+					if (compareDouble(value, matrix[preKey].Price) != 0)
+					{
+						matrix[key].FlipUp = true;
+						matrix[preKey].FlipDown = true;
+					}
+				}
+				preKey = key;
+			}
+		}
+		return true;
+	}
+};
+
