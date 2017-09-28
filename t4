@@ -1,0 +1,40 @@
+// CppTest.cpp : Defines the entry point for the console application.
+//
+
+#include "stdafx.h"
+#include <iostream>
+#include <fstream>
+#include <string>
+#include <stdio.h>
+#include <stdlib.h>
+#include <signal.h>
+#include "AlgoTrading.cpp"
+
+using namespace std;
+
+int _tmain(int argc, _TCHAR* argv[])
+{
+	string baseDirectory;
+	ifstream inFile;	
+	inFile.open("config.ini");
+	if (!inFile)
+	{
+		printf("config.ini doesn't exist");
+		return 0;
+	}
+	else
+	{
+		getline(inFile, baseDirectory);
+		inFile.close();
+		Exchange exchange("AAV", "AAV28C1711A", baseDirectory);
+		AlgoTrading algoTrading("AAV28C1711A", baseDirectory, exchange);
+		
+		exchange.simulate();
+	}	
+
+	return 0;
+}
+
+
+
+
