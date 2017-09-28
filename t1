@@ -1,0 +1,192 @@
+#include "stdafx.h"
+#include <map>
+#include <string>
+#include <fstream>
+#include "MarketSimulator.cpp"
+
+using namespace std;
+
+struct PricePoint
+{
+	double Price;
+	bool FlipUp = false;
+	bool FlipDown = false;
+};
+class AlgoTrading
+{
+public:
+	Exchange* exchange;
+	AlgoTrading(string warrantCode, string baseDirectory, Exchange e)
+	{
+		exchange = &e;
+		initialiseMatrix(baseDirectory + "\\Matrix\\" + warrantCode);
+	};
+	void underlyingMarketDataUpdate(MarketData md){
+		if (md.Bid == "") return;
+		Ubid = strToDouble(md.Bid);
+		Uask = strToDouble(md.Ask);
+		UbidQ = strToInt(md.BidQ);
+		UaskQ = strToInt(md.AskQ);
+
+		double matrixBidNextBuy = 0;
+		double matrixBidNextSell = 0;
+		if (call)
+		{
+			if (matrix.count(md.Bid) && matrix[md.Bid].FlipUp && Ubid > preUbid)
+				matrixBidNextBuy = matrix[md.Bid].Price;
+			if (matrix.count(md.Bid) && matrix[md.Bid].FlipDown && Ubid < preUbid)		
+				matrixBidNextSell = matrix[preUbidStr].Price;			
+		}
+		else
+		{
+			if (matrix.count(md.Ask) && matrix[md.Bid].FlipDown && Uask < preUask)
+				matrixBidNextBuy = matrix[md.Ask].Price;
+			if (matrix.count(md.Bid) && matrix[md.Bid].FlipDown && Ubid < preUbid)
+				matrixBidNextSell = matrix[preUbidStr].Price;
+		}
+
+		if (matrixBidNextBuy != 0)
+		{
+			if ((call && UbidQ > qtyThreshold) || (!call && UaskQ > qtyThreshold))
+			{
+				int result = exchange->sendOrder(true, matrixBidNextBuy, buyQty);
+				if (result == buyQty)
+				{
+					//fill
+				}
+				else if (result == 0)
+				{
+					//no fill
+				}
+				else
+				{
+					//partial
+				}
+			}
+		}
+	
+	}
+	void start()
+	{
+		list<MarketData>::const_iterator i = exchange->marketDatas.begin();
+		while (i != exchange->marketDatas.end())
+		{
+			exchange->updateMarketData(*i);
+			if (i->Underlying)
+			{
+				underlyingMarketDataUpdate(*i);
+			}
+			else
+			{
+
+			}
+			i++;
+		}
+	}
+private:	
+	int qtyThreshold = 1000;
+	int buyQty = 1000000;
+	double preUbid;
+	double preUask;
+	int preUbidQ;
+	int preUbidA;
+	double Ubid;
+	double Uask;
+	int UbidQ;
+	int UaskQ;
+
+	string preUbidStr;
+	string preUaskStr;
+	bool call;
+	string wCode;
+	std::map<string, PricePoint> matrix;
+	string RemoveZero(string ss)
+	{
+		if (ss.find(".") != string::npos)
+		{
+			int i = ss.length();
+			i--;			
+			while (i >= 0)
+			{
+				if (ss.at(i) == '.') return ss.substr(0, ss.length() - 1);
+				if (ss.at(i) == '0') ss = ss.substr(0, ss.length() - 1);
+				else return ss;
+				i--;
+			}
+		}
+		return ss;
+	}
+
+	int strToInt(string s)
+	{
+		double r = 0.0;
+		int i = 0;
+		while (i<s.length() && s.at(i) >= '0' && s.at(i) <= '9') {
+			r = (r*10.0) + (s.at(i) - '0');
+			++i;			
+		}
+
+		return r;
+	}
+
+	double strToDouble(string s)
+	{
+		double r = 0.0;
+		int i = 0;
+		while (i<s.length() && s.at(i) >= '0' && s.at(i) <= '9') {			
+				r = (r*10.0) + (s.at(i) - '0');
+				++i;
+			
+			if (s.at(i) == '.') {
+				double factor = 0.1;
+				++i;
+				while (i<s.length() && s.at(i) >= '0' && s.at(i) <= '9') {
+					r += (s.at(i) - '0') * factor;
+					++i;
+					factor *= 0.1;
+				}
+			}
+		}
+		
+		return r;
+	}
+	int compareDouble(double x, double y)
+	{
+		if (x - y > 0.0001) return 1;
+		if (x - y < -0.0001) return -1;
+		return 0;
+	}
+	bool initialiseMatrix(string fileName)
+	{
+		ifstream inFile;
+		string preKey = "";
+		inFile.open(fileName);
+		if (!inFile)
+		{
+			printf("Matrix file s% doesn't exist", fileName);
+			return false;
+		}
+		string line = "";
+		while (getline(inFile, line))
+		{
+			if (line != "")
+			{
+				string key = RemoveZero(line);
+				getline(inFile, line);
+				double value = strToDouble(line);
+				PricePoint pp;
+				pp.Price = value;
+				if (preKey != "")
+				{
+					if (compareDouble(value, matrix[preKey].Price) != 0)
+					{
+						matrix[key].FlipUp = true;
+						matrix[preKey].FlipDown = true;
+					}
+				}
+				preKey = key;
+			}
+		}
+		return true;
+	}
+};
