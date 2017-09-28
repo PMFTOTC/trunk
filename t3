@@ -1,0 +1,23 @@
+#include "stdafx.h"
+#include <string>
+
+struct MarketData
+{
+	std::string Bid;
+	std::string Ask;
+	std::string BidQ;
+	std::string AskQ;
+	std::string TimeStr;
+	double BidPrice;
+	double AskPrice;
+	int BidQty;
+	int AskQty;
+	bool Underlying;
+};
+
+enum Fill
+{
+	fills,
+	partialFill,
+	noMatching
+};
