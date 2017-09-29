@@ -15,12 +15,28 @@ using namespace std;
 class Exchange
 {
 private:
-	int strToI(string s)
+	string morningOpen = "10.01.00.000";
+	string morningClose = "12.29.00.000";
+	string morningCloseAuction = "12.29.59.999";
+	string afternoonOpen = "14.30.00.000";
+	string afternoonClose = "16.29.00.000";
+	string afternoonClosAuctione = "16.29.59.999";
+	
+	unsigned marketStatus(string time)
 	{
-		double r = 0.0;
+		if (time.compare(morningOpen) > 0 && time.compare(morningClose) < 0) return 1;
+		if (time.compare(morningClose) > 0 && time.compare(morningCloseAuction) < 0) return 2;
+		if (time.compare(afternoonOpen) > 0 && time.compare(afternoonClose) < 0) return 1;
+		if (time.compare(afternoonClose) > 0 && time.compare(afternoonClosAuctione) < 0) return 2;
+		return 0;
+	}
+	int strToL(string s)
+	{
+		if (s == "0") return 0;
+		long r = 0.0;
 		int i = 0;
 		while (i<s.length() && s.at(i) >= '0' && s.at(i) <= '9') {
-			r = (r*10.0) + (s.at(i) - '0');
+			r = (r*10) + (s.at(i) - '0');
 			++i;
 		}
 
@@ -29,12 +45,13 @@ private:
 
 	double strToD(string s)
 	{
+		if (s == "0") return 0.0;
 		double r = 0.0;
 		int i = 0;
 		while (i<s.length() && s.at(i) >= '0' && s.at(i) <= '9') {
 			r = (r*10.0) + (s.at(i) - '0');
 			++i;
-
+			if (i == s.length()) return r;
 			if (s.at(i) == '.') {
 				double factor = 0.1;
 				++i;
@@ -67,17 +84,21 @@ public:
 		}
 	};
 	list<MarketData> marketDatas;
+	list<MarketData> getMarketDatas()
+	{
+		return marketDatas;
+	}
 	string baseDirectory;
 	string warrant;
 	string underlying;
 	double warrantBid;
 	double warrantAsk;
-	int warrantBidQ;
-	int warrantAskQ;
+	long warrantBidQ;
+	long warrantAskQ;
 	double underlyingBid;
 	double underlyingAsk;
-	int underlyingBidQ;
-	int underlyingAskQ;
+	long underlyingBidQ;
+	long underlyingAskQ;
 	Exchange(std::string u, std::string w, string baseDirectory)
 	{	
 		time_t t = time(0);
@@ -85,7 +106,7 @@ public:
 		stringstream ss;
 		ss << put_time(&now, "%Y-%m-%d");
 		string timeStr = ss.str();
-		timeStr = "20170922";
+		timeStr = "20170928";
 		ifstream inFile;		
 		list<MarketData> underlyings;
 		list<MarketData> warrants;		
@@ -102,18 +123,20 @@ public:
 			while (getline(inFile, line))
 			{	
 				vector<string> v{ explode(line, ',') };
-				if (!is_number(v[2])) continue;
+				if (!is_number(v[2]) || v[4]=="0" || v[4]=="") continue;
 				MarketData md;
 				md.TimeStr = v[0];
 				md.Bid = v[2];
 				md.Ask = v[4];
 				md.BidQ = v[3];
 				md.AskQ = v[5];
+				
 				md.Underlying = true;
 				md.BidPrice = strToD(md.Bid);
 				md.AskPrice = strToD(md.Ask);
-				md.BidQty = strToI(md.BidQ);
-				md.AskQty = strToI(md.AskQ);
+				md.BidQty = strToL(md.BidQ);
+				md.AskQty = strToL(md.AskQ);
+				md.Status = marketStatus(v[0]);
 				underlyings.push_back(md);
 			}
 			inFile.close();
@@ -131,7 +154,7 @@ public:
 			while (getline(inFile, line))
 			{
 				vector<string> v{ explode(line, ',') };
-				if (!is_number(v[2])) continue;
+				if (!is_number(v[2]) || v[4] == "0" || v[4] == "") continue;
 				MarketData md;
 				md.TimeStr = v[0];
 				md.Bid = v[2];
@@ -141,8 +164,9 @@ public:
 				md.Underlying = false; 
 				md.BidPrice = strToD(md.Bid);
 				md.AskPrice = strToD(md.Ask);
-				md.BidQty = strToI(md.BidQ);
-				md.AskQty = strToI(md.AskQ);
+				md.BidQty = strToL(md.BidQ);
+				md.AskQty = strToL(md.AskQ);
+				md.Status = marketStatus(v[0]);
 				warrants.push_back(md);
 			}
 			inFile.close();
@@ -174,14 +198,6 @@ public:
 		{
 			marketDatas.push_back(*j);
 			j++;
-		}
-
-		ofstream myfile("example.txt");
-		if (myfile.is_open())
-		{std::list<MarketData>::const_iterator iterator;
-			for (iterator = marketDatas.begin(); iterator != marketDatas.end(); ++iterator)
-				myfile << (*iterator).TimeStr << "\n";
-			myfile.close();
 		}
 		
 	}
@@ -221,7 +237,7 @@ public:
 		}
 		return true;
 	}
-	int sendOrder(bool buy, double price, int quantity)
+	long sendOrder(bool buy, double price, long quantity)
 	{
 		if (buy)
 		{
@@ -229,18 +245,19 @@ public:
 			{
 				if (quantity <= warrantAskQ)
 				{
-					printf("%s: bought %d at $%f", warrant, quantity, warrantAsk);
+					char buffer[200];
+					sprintf(buffer, "%s: bought %ld at $%0.2f", warrant, quantity, warrantAsk);					
 					return quantity;
 				}
 				else
 				{
-					printf("%s: failed to buy all %d, bought market Qty: %d at $%f", warrant, quantity, warrantAskQ, warrantAsk);
+					printf("%s: failed to buy all %ld, bought market Qty: %ld at $%0.2f", warrant, quantity, warrantAskQ, warrantAsk);
 					return warrantAskQ;
 				}
 			}
 			else
 			{
-				printf("%s Unfair Pricing: Warrant Ask should be %f, but it is %f", warrant, price, warrantAsk);
+				printf("%s Unfair Pricing: Warrant Ask should be %.2f, but it is $ %.2f", warrant, price, warrantAsk);
 				return 0;
 			}
 		}
@@ -248,22 +265,54 @@ public:
 		{
 			if (price <= warrantBid)
 			{
-				if (quantity <= warrantAskQ)
+				if (quantity <= warrantBidQ)
 				{
-					printf("%s: sold %d at $%f", warrant, quantity, warrantBid);
+					printf("%s: sold %ld at $%.2f", warrant, quantity, warrantBid);
 					return quantity;
 				}
 				else
 				{
-					printf("%s: failed to sell all %d, bought market Qty: %d at $%f", warrant, quantity, warrantBidQ, warrantBid);
+					printf("%s: failed to sell all %d, sold market Qty: %ld at $%.2f", warrant, quantity, warrantBidQ, warrantBid);
 					return warrantBidQ;
 				}
 			}
 			else
 			{
-				printf("%s Unfair Pricing: Warrant Ask should be %f, but it is %f", warrant, price, warrantBid);
+				printf("%s Unfair Pricing: Warrant Ask should be %.2f, but it is $%.2f", warrant, price, warrantBid);
 				return 0;
 			}
 		}
 	}
+
+	int sendOrder(bool buy, int quantity)
+	{
+		if (buy)
+		{			
+				if (quantity <= warrantAskQ)
+				{
+					printf("%s: bought %ld at $%.2f", warrant, quantity, warrantAsk);
+					return quantity;
+				}
+				else
+				{
+					printf("%s: failed to buy all %ld, bought market Qty: %ld at $%.2f", warrant, quantity, warrantAskQ, warrantAsk);
+					return warrantAskQ;
+				}
+			
+		}
+		else
+		{
+			
+				if (quantity <= warrantAskQ)
+				{
+					printf("%s: sold %ld at $%.2f", warrant, quantity, warrantBid);
+					return quantity;
+				}
+				else
+				{
+					printf("%s: failed to sell all %ld, bought market Qty: %ld at $%.2f", warrant, quantity, warrantBidQ, warrantBid);
+					return warrantBidQ;
+				}
+			}			
+		}	
 };
