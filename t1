@@ -16,17 +16,25 @@ class AlgoTrading
 {
 public:
 	Exchange* exchange;
-	AlgoTrading(string warrantCode, string baseDirectory, Exchange e)
+	AlgoTrading(string warrantCode, string baseDirectory, Exchange* e)
 	{
-		exchange = &e;
-		initialiseMatrix(baseDirectory + "\\Matrix\\" + warrantCode);
+		exchange = e;
+		time_t t = time(0);
+		auto now = *localtime(&t);
+		stringstream ss;
+		ss << put_time(&now, "%Y-%m-%d");
+		string timeStr = ss.str();
+		timeStr = "20170928";
+		initialiseMatrix(baseDirectory + timeStr+ "\\Matrix\\" + warrantCode);
 	};
 	void underlyingMarketDataUpdate(MarketData md){
 		if (md.Bid == "") return;
+
+		if (md.Status==1){
 		Ubid = strToDouble(md.Bid);
 		Uask = strToDouble(md.Ask);
-		UbidQ = strToInt(md.BidQ);
-		UaskQ = strToInt(md.AskQ);
+		UbidQ = strToLong(md.BidQ);
+		UaskQ = strToLong(md.AskQ);
 
 		double matrixBidNextBuy = 0;
 		double matrixBidNextSell = 0;
@@ -34,15 +42,15 @@ public:
 		{
 			if (matrix.count(md.Bid) && matrix[md.Bid].FlipUp && Ubid > preUbid)
 				matrixBidNextBuy = matrix[md.Bid].Price;
-			if (matrix.count(md.Bid) && matrix[md.Bid].FlipDown && Ubid < preUbid)		
+			if (matrix.count(preUbidStr) && matrix[preUbidStr].FlipDown && Ubid < preUbid)
 				matrixBidNextSell = matrix[preUbidStr].Price;			
 		}
 		else
 		{
-			if (matrix.count(md.Ask) && matrix[md.Bid].FlipDown && Uask < preUask)
+			if (matrix.count(md.Ask) && matrix[md.Ask].FlipDown && Uask < preUask)
 				matrixBidNextBuy = matrix[md.Ask].Price;
-			if (matrix.count(md.Bid) && matrix[md.Bid].FlipDown && Ubid < preUbid)
-				matrixBidNextSell = matrix[preUbidStr].Price;
+			if (matrix.count(preUaskStr) && matrix[preUaskStr].FlipDown && Uask > preUask)
+				matrixBidNextSell = matrix[preUaskStr].Price;
 		}
 
 		if (matrixBidNextBuy != 0)
@@ -50,40 +58,120 @@ public:
 			if ((call && UbidQ > qtyThreshold) || (!call && UaskQ > qtyThreshold))
 			{
 				int result = exchange->sendOrder(true, matrixBidNextBuy, buyQty);
+				char strResult[200];
 				if (result == buyQty)
 				{
-					//fill
+					totalPosition += result;
+					totalPnL -= (matrixBidNextBuy * result) * (1 + commission);
+					myfile << md.TimeStr << ": Bought " << result << " @ " << matrixBidNextBuy << ", total position " << totalPosition << " Total PnL " << totalPnL << "\n";
 				}
 				else if (result == 0)
 				{
-					//no fill
+					totalPosition += result;
+					totalPnL -= (matrixBidNextBuy * result) * (1 + commission);
+					myfile << md.TimeStr << ": selling at " << matrixBidNextBuy << " but failed to fill order\n";
 				}
 				else
 				{
-					//partial
+					totalPosition += result;
+					totalPnL -= (matrixBidNextBuy * result) * (1 + commission);
+					myfile << md.TimeStr << ": Partial Bought " << result << " @ " << matrixBidNextBuy << ", total position " << totalPosition << " Total PnL " << totalPnL << "\n";
 				}
+				text += strResult;
 			}
 		}
-	
+
+		if (matrixBidNextSell)
+		{
+			if (totalPosition != 0)
+			{
+				int result = exchange->sendOrder(false, matrixBidNextSell, totalPosition);
+				char strResult[200];
+				if (result == totalPosition)
+				{
+					totalPosition = 0;
+					totalPnL += (matrixBidNextSell * result) * (1 - commission);
+					myfile << md.TimeStr << ": Sold " << result << " @ " << matrixBidNextSell << ", total position " << totalPosition << " Total PnL " << totalPnL << "\n";
+				}
+				else if (result == 0)
+				{
+					myfile << md.TimeStr << ": selling at " << matrixBidNextSell << " but failed to fill order\n";
+				}
+				else
+				{
+					totalPosition -= result;
+					totalPnL += (matrixBidNextSell * result) * (1 - commission);
+					myfile << md.TimeStr << ": Partial sold " << result << " @ " << matrixBidNextSell << ", total position " << totalPosition << " Total PnL " << totalPnL << "\n";
+				}
+				text += strResult;
+			}
+		}
+		}
+		else if (md.Status == 2)
+		{
+			if (totalPosition != 0)
+			{
+				long result = exchange->sendOrder(false, totalPosition);
+				char strResult[200];
+				if (result == totalPosition)
+				{
+					totalPosition = 0;
+					totalPnL += (wAsk * result) * (1 - commission);
+					myfile << md.TimeStr << ": Sold " << result << " @ " << wAsk << ", total position " << totalPosition << " Total PnL " << totalPnL << "\n";
+				}
+				else if (result == 0)
+				{
+					myfile << md.TimeStr << ": selling at " << wAsk << " but failed to fill order\n";
+				}
+				else
+				{
+					totalPosition -= result;
+					totalPnL += (wAsk * result) * (1 - commission);
+					myfile << md.TimeStr << ": Partial sold " << result << " @ " << wAsk << ", total position " << totalPosition << " Total PnL " << totalPnL << "\n";
+				}
+				text += strResult;
+			}
+		}
+
 	}
 	void start()
-	{
+	{				
+		myfile.open("example.txt");
+		
+
 		list<MarketData>::const_iterator i = exchange->marketDatas.begin();
+		
 		while (i != exchange->marketDatas.end())
 		{
 			exchange->updateMarketData(*i);
 			if (i->Underlying)
 			{
 				underlyingMarketDataUpdate(*i);
+				preUask = (*i).AskPrice;
+				preUaskStr = (*i).Ask;
+				preUbid = (*i).BidPrice;
+				preUbidStr = (*i).Bid;
 			}
 			else
 			{
-
+				wAskQ = (*i).AskQty;
+				wBidQ = (*i).BidQty;
+				wAsk = (*i).AskPrice;
+				wBid = (*i).BidPrice;
 			}
 			i++;
 		}
+
+		myfile << "total PnL " << totalPnL << " : left position " << totalPosition << "\n";
+				
+		myfile.close();
 	}
 private:	
+	ofstream myfile;
+	string text = "";
+	double commission = 0.00057;
+	double totalPnL = 0;
+	int totalPosition = 0;
 	int qtyThreshold = 1000;
 	int buyQty = 1000000;
 	double preUbid;
@@ -95,11 +183,17 @@ private:
 	int UbidQ;
 	int UaskQ;
 
+	int wAskQ;
+	int wBidQ;
+	double wAsk;
+	double wBid;
+
 	string preUbidStr;
 	string preUaskStr;
 	bool call;
 	string wCode;
 	std::map<string, PricePoint> matrix;
+
 	string RemoveZero(string ss)
 	{
 		if (ss.find(".") != string::npos)
@@ -117,15 +211,14 @@ private:
 		return ss;
 	}
 
-	int strToInt(string s)
+	int strToLong(string s)
 	{
-		double r = 0.0;
-		int i = 0;
+		long r = 0;
+		long i = 0;
 		while (i<s.length() && s.at(i) >= '0' && s.at(i) <= '9') {
-			r = (r*10.0) + (s.at(i) - '0');
+			r = (r*10) + (s.at(i) - '0');
 			++i;			
 		}
-
 		return r;
 	}
 
@@ -136,7 +229,7 @@ private:
 		while (i<s.length() && s.at(i) >= '0' && s.at(i) <= '9') {			
 				r = (r*10.0) + (s.at(i) - '0');
 				++i;
-			
+				if (i == s.length()) return r;
 			if (s.at(i) == '.') {
 				double factor = 0.1;
 				++i;
@@ -180,11 +273,12 @@ private:
 				{
 					if (compareDouble(value, matrix[preKey].Price) != 0)
 					{
-						matrix[key].FlipUp = true;
-						matrix[preKey].FlipDown = true;
+						pp.FlipUp = true;
+						pp.FlipDown = true;
 					}
 				}
 				preKey = key;
+				matrix[key] = pp;
 			}
 		}
 		return true;
