@@ -48,7 +48,7 @@ void OnTick()
    if (takingInterestOrder) if (!placeInterestOrder(day,22,1,interestPoint)) message += "\nSENDing ORDER FAILED" + GetLastError();
    if (closeOrderToAvoidInterest)
    {
-      if (TimeDayOfWeek(TimeCurrent())==2 && TimeHour(TimeCurrent()) == 16 && TimeMinute(TimeCurrent()) == 18 && TimeSeconds(TimeCurrent())>=30)
+      if ((TimeDayOfWeek(TimeCurrent())==day || day == -1) && TimeHour(TimeCurrent()) == 22 && TimeMinute(TimeCurrent()) == 59 && TimeSeconds(TimeCurrent())>=30)
       { 
        for (int i = OrdersTotal() - 1; i >= 0; i--)
        {
